@@ -1,4 +1,5 @@
 import controlP5.ControlP5
+import controlP5.ControlP5Constants.ACTION_BROADCAST
 import processing.core.PApplet
 import processing.core.PVector
 import java.util.ArrayList
@@ -14,25 +15,24 @@ class Sketch(private val boidsCount: Int) : PApplet() {
         }
     }
 
+    lateinit var controller: ControlP5
+
     private val flock = Flock()
+    var maxForce: Float = 0.4f
+    var maxSpeed: Float = 4f
+    var perceptionRadius: Float = 50f // alignmentRadius and cohesionRadius
+    var separationRadius: Float = 25f
+    var alignmentWeight: Float = 1f
+    var cohesionWeight: Float = 1f
+    var separationWeight: Float = 1.5f
 
     override fun settings() {
         size(displayWidth / 2, displayHeight / 2)
     }
 
     override fun setup() {
-        val controller = ControlP5(this)
-        controller.addSlider("Alignment", 0f, 10f, 1f, 10, height - 50, 100, 10)
-        controller.addSlider("Cohesion", 0f, 10f, 1f, 10, height - 35, 100, 10)
-        controller.addSlider("Separation", 0f, 10f, 1.5f, 10, height - 20, 100, 10)
-
-        controller.addSlider("Max force", 0f, 2f, 0.4f, width - 190, height - 65, 100, 10)
-        controller.addSlider("Max speed", 0f, 8f, 4f, width - 190, height - 50, 100, 10)
-
-        val maxRadius = min(width, height) / 2f
-        controller.addSlider("Perception radius", 0f, maxRadius, 50f, width - 190, height - 35, 100, 10)
-        controller.addSlider("Separation radius", 0f, maxRadius, 25f, width - 190, height - 20, 100, 10)
-
+        controller = ControlP5(this)
+        setupSliders()
         repeat(boidsCount) {
             flock.addBoid(
                 Boid(
@@ -40,14 +40,38 @@ class Sketch(private val boidsCount: Int) : PApplet() {
                 )
             )
         }
+    }
 
-//        private val maxForce: Float = 0.4f,
-//        private val maxSpeed: Float = 4f,
-//        private val perceptionRadius: Float = 50f, // alignmentRadius and cohesionRadius
-//        private val separationRadius: Float = 25f,
-//        private val alignmentWeight: Float = 1f,
-//        private val cohesionWeight: Float = 1f,
-//        private val separationWeight: Float = 1.5f
+    private fun setupSliders() {
+        controller
+            .addSlider("Alignment", 0f, 10f, 1f, 10, height - 50, 100, 10)
+            .addCallback { if (it.action == ACTION_BROADCAST) alignmentWeight = it.controller.value }
+
+        controller
+            .addSlider("Cohesion", 0f, 10f, 1f, 10, height - 35, 100, 10)
+            .addCallback { if (it.action == ACTION_BROADCAST) cohesionWeight = it.controller.value }
+
+        controller
+            .addSlider("Separation", 0f, 10f, 1.5f, 10, height - 20, 100, 10)
+            .addCallback { if (it.action == ACTION_BROADCAST) separationWeight = it.controller.value }
+
+        controller
+            .addSlider("Max force", 0f, 2f, 0.4f, width - 190, height - 65, 100, 10)
+            .addCallback { if (it.action == ACTION_BROADCAST) maxForce = it.controller.value }
+
+        controller
+            .addSlider("Max speed", 0f, 8f, 4f, width - 190, height - 50, 100, 10)
+            .addCallback { if (it.action == ACTION_BROADCAST) maxSpeed = it.controller.value }
+
+        val maxRadius = min(width, height) / 2f
+
+        controller
+            .addSlider("Perception radius", 0f, maxRadius, 50f, width - 190, height - 35, 100, 10)
+            .addCallback { if (it.action == ACTION_BROADCAST) perceptionRadius = it.controller.value }
+
+        controller
+            .addSlider("Separation radius", 0f, maxRadius, 25f, width - 190, height - 20, 100, 10)
+            .addCallback { if (it.action == ACTION_BROADCAST) separationRadius = it.controller.value }
     }
 
     override fun draw() {
@@ -75,14 +99,7 @@ class Sketch(private val boidsCount: Int) : PApplet() {
         x: Float, y: Float,
         private var velocity: PVector = PVector.random2D(),
         private var acceleration: PVector = PVector(0f, 0f),
-        private val sizeUnit: Float = 2f,
-        private val maxForce: Float = 0.4f,
-        private val maxSpeed: Float = 4f,
-        private val perceptionRadius: Float = 50f, // alignmentRadius and cohesionRadius
-        private val separationRadius: Float = 25f,
-        private val alignmentWeight: Float = 1f,
-        private val cohesionWeight: Float = 1f,
-        private val separationWeight: Float = 1.5f
+        private val sizeUnit: Float = 2f
     ) {
 
         constructor(x: Int, y: Int) : this(x.toFloat(), y.toFloat())
@@ -109,11 +126,6 @@ class Sketch(private val boidsCount: Int) : PApplet() {
 
         private fun flock(boids: ArrayList<Boid>) {
             val behavior = steer(boids)
-//            applyForce(
-//                align(boids).mult(alignmentWeight),
-//                cohere(boids).mult(cohesionWeight),
-//                separate(boids).mult(separationWeight)
-//            )
             applyForce(
                 behavior.first.mult(alignmentWeight),
                 behavior.second.mult(cohesionWeight),
@@ -198,121 +210,8 @@ class Sketch(private val boidsCount: Int) : PApplet() {
 
             return Triple(alignment, cohesion, separation)
         }
-
-        /** Separation: steer to avoid crowding local flockmates */
-        private fun separate(boids: ArrayList<Boid>): PVector {
-            val desiredSeparation = 25.0f
-            val steer = PVector(0f, 0f, 0f)
-            var count = 0
-            // For every boid in the system, check if it's too close
-            for (other in boids) {
-                val d = PVector.dist(position, other.position)
-                // If the distance is greater than 0 and less than an arbitrary amount (0 when you are yourself)
-                if (d > 0 && d < desiredSeparation) {
-                    // Calculate vector pointing away from neighbor
-                    val diff = PVector.sub(position, other.position)
-                    diff.normalize()
-                    diff.div(d)        // Weight by distance
-                    steer.add(diff)
-                    count++            // Keep track of how many
-                }
-            }
-            // Average -- divide by how many
-            if (count > 0) {
-                steer.div(count.toFloat())
-            }
-
-            // As long as the vector is greater than 0
-            if (steer.mag() > 0) {
-                // First two lines of code below could be condensed with new PVector setMag() method
-                // Not using this method until Processing.js catches up
-                // steer.setMag(maxSpeed);
-
-                // Implement Reynolds: Steering = Desired - Velocity
-                steer.normalize()
-                steer.mult(maxSpeed)
-                steer.sub(velocity)
-                steer.limit(maxForce)
-            }
-            return steer
-        }
-
-        /** Alignment: steer towards the average heading of local flockmates */
-        private fun align(boids: ArrayList<Boid>): PVector {
-            val neighborDist = 50f
-            val sum = PVector(0f, 0f)
-            var count = 0
-            for (other in boids) {
-                val d = PVector.dist(position, other.position)
-                if (d > 0 && d < neighborDist) {
-                    sum.add(other.velocity)
-                    count++
-                }
-            }
-            return if (count > 0) {
-                sum.div(count.toFloat())
-                // First two lines of code below could be condensed with new PVector setMag() method
-                // Not using this method until Processing.js catches up
-                // sum.setMag(maxSpeed);
-
-                // Implement Reynolds: Steering = Desired - Velocity
-                sum.normalize()
-                sum.mult(maxSpeed)
-                val steer = PVector.sub(sum, velocity)
-                steer.limit(maxForce)
-                steer
-            } else {
-                PVector(0f, 0f)
-            }
-        }
-
-        /** Cohesion: steer to move toward the average position of local flockmates */
-        private fun cohere(boids: ArrayList<Boid>): PVector {
-            val neighborDist = 50f
-            val sum = PVector(0f, 0f)   // Start with empty vector to accumulate all positions
-            var count = 0
-            for (other in boids) {
-                val d = PVector.dist(position, other.position)
-                if (d > 0 && d < neighborDist) {
-                    sum.add(other.position) // Add position
-                    count++
-                }
-            }
-            return if (count > 0) {
-                sum.div(count.toFloat())
-                seek(sum)  // Steer towards the position
-            } else {
-                PVector(0f, 0f)
-            }
-        }
-
-
-        // A method that calculates and applies a steering force towards a target
-        // STEER = DESIRED MINUS VELOCITY
-        private fun seek(target: PVector): PVector {
-            val desired = PVector.sub(target, position)  // A vector pointing from the position to the target
-            // Scale to maximum speed
-            desired.normalize()
-            desired.mult(maxSpeed)
-
-            // Above two lines of code below could be condensed with new PVector setMag() method
-            // Not using this method until Processing.js catches up
-            // desired.setMag(maxSpeed);
-
-            // Steering = Desired minus Velocity
-            val steer = PVector.sub(desired, velocity)
-            steer.limit(maxForce)  // Limit to maximum steering force
-            return steer
-        }
     }
 }
-
-private fun <T> Triple<T, T, T>.forEach(action: (T) -> Unit) {
-    action(first)
-    action(second)
-    action(third)
-}
-
 
 fun main(args: Array<String>) {
     Sketch.run()
